@@ -6,6 +6,7 @@ class WaitingRoom:
     def __init__(self, capacity):
         self.queue = []
         self.capacity = capacity
+        self.transition_log = []
         return None
     
     def getQueue(self):
@@ -22,7 +23,15 @@ class WaitingRoom:
             self.queue.append(patientObject)
             
             self.setQueue(sort_by_priority(self.getQueue()))
-
+        
+            self.transition_log.append({
+                "Patient ID": patientObject.getID(),
+                "From Room": "None",
+                "To Room": self.__class__.__name__,
+                "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "Action": "Entered"
+            })
+        
             patientObject.setStatus("Waiting")
             patientObject.setCheckpoint(datetime.now())
             
@@ -55,8 +64,23 @@ class WaitingRoom:
             if self.queue != []:
                 patient = self.queue.pop(0)
                 treatmentRoomObject.registerPatient(patient)
+
+                # Log the transition
+                self.transition_log.append({
+                    "Patient ID": patient.getID(),
+                    "From Room": self.__class__.__name__,
+                    "To Room": treatmentRoomObject.__class__.__name__,
+                    "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "Action": "Moved"
+                })
             else:
                 return "No More Patients in Waiting Room!"
             return f"Patient {patient.getID()} assigned to bed {bed_id}"
         else:
             return f"No Bed Available!"
+        
+    def getTransitions(self):
+        # Return and clear the transition log for this room
+        log = self.transition_log[:]
+        self.transition_log.clear()
+        return log

@@ -31,8 +31,14 @@ time_between_patients_arrival = 1 / arrival_rate * 60  # Time in seconds
 simulation_start_time = datetime.now()
 end_time = simulation_start_time + timedelta(minutes=simulation_duration_minutes)
 last_patient_arrival_time = simulation_start_time
+last_escalation_time = simulation_start_time
 
 placeholder = st.empty()
+cumulative_transitions = []  # Store cumulative transitions over time
+cumulative_time = []
+room_viscosity = {"Waiting Room": [], "Treatment Room": []}
+
+
 # UI to Start Simulation
 if st.sidebar.button("Start Simulation"):
     patients = []
@@ -40,18 +46,62 @@ if st.sidebar.button("Start Simulation"):
 
     while current_time <= end_time:
         current_time = datetime.now()
-        
+                
         # Step 1: Register a new patient in the arrival room
         if (current_time - last_patient_arrival_time).total_seconds() >= time_between_patients_arrival:
             patient = Patient()
             arrival_room.registerPatient(patient)
+            patient.setEntryTime(current_time)  # Set entry time when patient enters the room
             patients.append(patient)
             last_patient_arrival_time = current_time
 
         # Step 2: Move patients between rooms
         arrival_room.sendToWaitingRoom(waiting_room)
+        
+        # Escalate every 5 seconds
+        if (current_time - last_escalation_time).total_seconds() >= 5:
+            queue = waiting_room.getQueue()
+            if queue:
+                for patient in queue:
+                    waiting_room.escalate(patient)
+                    patient.setExitTime(current_time)  # Set exit time when patient leaves the room
+                    room_viscosity["Waiting Room"].append(
+                        (patient.getExitTime() - patient.getEntryTime()).total_seconds() / 60  # Residence time in minutes
+                    )
+                last_escalation_time = current_time
+        
         waiting_room.sendToTreatmentRoom(treatment_room)
         treatment_room.sendToExitRoom(exit_room)
+
+
+        # Waiting Room
+        for patient in waiting_room.getQueue():
+            if patient.getExitTime() and patient.getEntryTime():
+                time_in_room = (patient.getExitTime() - patient.getEntryTime()).total_seconds()# in minutes
+                room_viscosity["Waiting Room"].append(time_in_room)
+
+        # Treatment Room
+        for patient in treatment_room.patients.values():
+            if patient.getExitTime() and patient.getEntryTime():
+                time_in_room = (patient.getExitTime() - patient.getEntryTime()).total_seconds()# in minutes
+                room_viscosity["Treatment Room"].append(time_in_room)
+
+
+        # Collect transitions from all rooms
+        all_transitions = []
+        all_transitions.extend(arrival_room.getTransitions())
+        all_transitions.extend(waiting_room.getTransitions())
+        all_transitions.extend(treatment_room.getTransitions())
+        all_transitions.extend(exit_room.getTransitions())
+
+
+        # Calculate the flow (transitions per second)
+        elapsed_time = (current_time - simulation_start_time).total_seconds()
+        flow_rate = len(all_transitions) / elapsed_time if elapsed_time > 0 else 0
+
+        # Update cumulative data
+        cumulative_transitions.append(len(all_transitions))
+        cumulative_time.append(elapsed_time / 60)  # Convert to minutes
 
         # Collect patient counts
         arrival_room_count = len(arrival_room.getQueue())
@@ -82,8 +132,39 @@ if st.sidebar.button("Start Simulation"):
                     title="Patients in Each Room",
                     text=patient_counts,
                 )
-                # Add unique key using the timestamp
                 st.plotly_chart(fig, use_container_width=True, key=f"Patient_Room_{current_time.timestamp()}")
+                
+                # Plot cumulative flow
+                if len(cumulative_transitions) > 1:
+                    flow_data = pd.DataFrame({
+                        "Time (minutes)": cumulative_time,
+                        "Cumulative Transitions": cumulative_transitions
+                    })
+
+                    flow_fig = px.line(
+                        flow_data,
+                        x="Time (minutes)",
+                        y="Cumulative Transitions",
+                        title="Cumulative Flow Over Time",
+                        labels={"Time (minutes)": "Time (minutes)", "Cumulative Transitions": "Transitions"}
+                    )
+                    st.plotly_chart(flow_fig, use_container_width=True, key=f"patient_flow_{current_time.timestamp()}")
+
+                # Plot viscosity for each room
+                viscosity_data = pd.DataFrame({
+                    "Room": list(room_viscosity.keys()),
+                    "Average Viscosity (minutes)": [sum(times) / len(times) if times else 0 for times in room_viscosity.values()]
+                })
+
+                viscosity_fig = px.bar(
+                    viscosity_data,
+                    x="Room",
+                    y="Average Viscosity (minutes)",
+                    title="Average Viscosity (Time Spent) per Room",
+                    labels={"Average Viscosity (minutes)": "Average Time Spent (Seconds)"},
+                    text="Average Viscosity (minutes)"
+                )
+                st.plotly_chart(viscosity_fig, use_container_width=True, key=f"viscosity_room_{current_time.timestamp()}")
 
             # Tab 2: Density and Beds Status
             with tab2:
@@ -103,7 +184,6 @@ if st.sidebar.button("Start Simulation"):
                     title="Density per Room",
                     text=densities,
                 )
-                # Add unique key using the timestamp
                 st.plotly_chart(fig2, use_container_width=True, key=f"Density_{current_time.timestamp()}")
 
                 # Beds status
@@ -144,9 +224,7 @@ if st.sidebar.button("Start Simulation"):
                     title=f"Beds Status (as of {current_time.strftime('%H:%M:%S')})",
                     color_discrete_map={"red": "red", "yellow": "yellow", "green": "green", "gray": "gray"},
                 )
-                # Add unique key using the timestamp
                 st.plotly_chart(fig3, use_container_width=True, key=f"Bed_Status_{current_time.timestamp()}")
-
 
             # Tab 3: Patient Reports
             with tab3:
@@ -156,7 +234,7 @@ if st.sidebar.button("Start Simulation"):
                     if not df.empty:
                         st.subheader("Patient Summary Overview")
                         
-                        # Time chart (already existing code)
+                        # Time chart
                         chart_data = pd.melt(
                             df, id_vars=["patient_id"],
                             value_vars=["waiting_time", "treatment_time", "total_time"],
@@ -181,7 +259,6 @@ if st.sidebar.button("Start Simulation"):
 
                         st.subheader("Triage Level Distribution")
 
-                        # Create Altair bar chart for triage levels
                         triage_chart = alt.Chart(triage_summary).mark_bar().encode(
                             x=alt.X('Triage Category:N', title="Triage Level"),
                             y=alt.Y('Count:Q', title="Number of Patients"),
@@ -195,10 +272,7 @@ if st.sidebar.button("Start Simulation"):
 
                         st.altair_chart(triage_chart, use_container_width=True)
 
-
-                        # Detailed Reports
                         with st.expander("View Detailed Reports"):
                             st.dataframe(df)
 
-                        
     st.success("Simulation Finished Successfully")

@@ -9,7 +9,7 @@ class TreatmentRoom:
         self.capacity = capacity
         beds = [Bed() for _ in range(capacity)]
         self.beds = {bed.getID(): bed for bed in beds}
-
+        self.transition_log = []
         return None
     
     def getBeds(self):
@@ -35,6 +35,14 @@ class TreatmentRoom:
             patientObject.setStatus("Under Treatment")
             patientObject.setCheckpoint(datetime.now())
             
+            self.transition_log.append({
+                "Patient ID": patientObject.getID(),
+                "From Room": "None",
+                "To Room": self.__class__.__name__,
+                "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "Action": "Entered"
+            })
+                            
             bed = self.beds[bed_id]
             bed.setPatientAssiend(patientObject.getID())
             bed.setReleaseTime(self.calculateTreatmentDuration(patientObject))
@@ -79,4 +87,19 @@ class TreatmentRoom:
         if patienrs_to_release:
             for patient in patienrs_to_release:
                 exitRoomObject.releasePatient(patient)
+
+                # Log the transition
+                self.transition_log.append({
+                    "Patient ID": patient.getID(),
+                    "From Room": self.__class__.__name__,
+                    "To Room": exitRoomObject.__class__.__name__,
+                    "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "Action": "Moved"
+                })
         return None
+    
+    def getTransitions(self):
+        # Return and clear the transition log for this room
+        log = self.transition_log[:]
+        self.transition_log.clear()
+        return log

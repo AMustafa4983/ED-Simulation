@@ -5,7 +5,23 @@ class Patient:
         self.priority_level = None
         self.triage_category = None
         self.checkpoints = {}
+        self.entry_time = None
+        self.exit_time = None
 
+    def setEntryTime(self, current_time):
+        self.entry_time = current_time
+        return None
+    
+    def getEntryTime(self):
+        return self.entry_time
+    
+    def setExitTime(self, current_time):
+        self.exit_time = current_time
+        return None
+    
+    def getExitTime(self):
+        return self.exit_time
+    
     def getID(self):
         return self.paitent_id
     

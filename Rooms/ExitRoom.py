@@ -7,6 +7,8 @@ class ExitRoom:
     def __init__(self):
         self.treated_patients = []
         self.treated_patients_reports = []
+        self.transition_log = []
+
 
     def getTreatedPatients(self):
         return self.treated_patients
@@ -38,6 +40,14 @@ class ExitRoom:
         treatment_time = self.calculateTreatmentTime(patientObject)
         total_time = self.calculateTotalTime(patientObject)
 
+        # Log the transition
+        self.transition_log.append({
+            "Patient ID": patientObject.getID(),
+            "From Room": self.__class__.__name__,
+            "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "Action": "Exit"
+        })
+
         self.treated_patients_reports.append(
             {
                 'patient_id': patientObject.getID(),
@@ -49,3 +59,10 @@ class ExitRoom:
             }
         )
         return f"Patient {patientObject.getID()} exit the department"
+    
+
+    def getTransitions(self):
+        # Return and clear the transition log for this room
+        log = self.transition_log[:]
+        self.transition_log.clear()
+        return log
